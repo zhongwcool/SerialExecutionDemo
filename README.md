@@ -14,6 +14,7 @@
 - Set表示设置为有信号状态，这时调用WaitOne的线程将继续执行；
 - Reset表示设置为无信号状态，这时调用WaitOne的线程将阻塞；
 - WaitOne表示在无信号状态时阻塞当前线程，也就是说WaitOne只有在无信号状态下才会阻塞线程。
+
 因为AutoResetEvent调用Set后会在第一个调用WaitOne后，自动将信号置为无信号状态，导致其他调用WaitOne的线程继续阻塞。
 
 #### Queue
@@ -82,8 +83,8 @@ public partial class MainWindow
 ```
 [完整工程](https://github.com/zhongwcool/SerialExecutionDemo)
 我们在初始化AutoResetEvent对象时，将初始为true即表示有信号状态，所以第一个提交的DemoTask中的WaitOne能拿到信号。
+
 AutoResetEvent在第一个调用WaitOne后，自动将信号置为无信号状态导致其他调用WaitOne阻塞。
-所以依次提交的任务依次获得信号，其他则阻塞等待，实现了顺序执行。
 
 ### 参考文章：
 1. [WPF下多线程的使用方法](https://www.cnblogs.com/yangyancheng/archive/2011/04/05/2006227.html)
