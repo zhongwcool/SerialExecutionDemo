@@ -8,72 +8,83 @@
 当然这是我现阶段粗浅水平所能想到的实现方法，希望以后能接触到更广大的世界，能嘲笑今天的自己。
 
 ### 1、实现原理
-依赖AutoResetEvent的信号机制实现线程控制。
+#### AutoResetEvent
+依赖AutoResetEvent的信号机制实现“串行”。
 对象方法：
 - Set表示设置为有信号状态，这时调用WaitOne的线程将继续执行；
 - Reset表示设置为无信号状态，这时调用WaitOne的线程将阻塞；
 - WaitOne表示在无信号状态时阻塞当前线程，也就是说WaitOne只有在无信号状态下才会阻塞线程。
 因为AutoResetEvent调用Set后会在第一个调用WaitOne后，自动将信号置为无信号状态，导致其他调用WaitOne的线程继续阻塞。
 
+#### Queue
+使用Queue的“先进先出”特性实现“顺序”。
+最早使用ThreadPool，但是不能控制线程顺序被唤醒。也可能是未得其法，希望有大神看到能指正用法。
+
 ### 2、代码
 正文只贴关键代码：
 ```c#
 public partial class MainWindow
     {
-        private readonly ConcurrentDictionary<int, EventWaitHandle> _dictionary = new ConcurrentDictionary<int, EventWaitHandle>();
+        private readonly Queue<CookieTask> _threadQueue = new Queue<CookieTask>();
+        private readonly AutoResetEvent _autoResetEvent = new AutoResetEvent(true);
+        private int _count = 10;
 
         public MainWindow()
         {
             InitializeComponent();
+            
+            var task  = new Thread(SerialService);
+            task.Start();
+        }
+
+        private void SerialService()
+        {
+            while (true)
+            {
+                if (_threadQueue.Count > 0)
+                {
+                    var tt = _threadQueue.Dequeue();
+                    tt.Worker.Start(tt.Data);
+                }
+
+                Thread.Sleep(500);
+            }
         }
 
         private void Button_OnClick(object sender, RoutedEventArgs e)
         {
-            for (int i = 0; i < 10; i++)
+            for (var i = 0; i < 100; i++)
             {
-                _dictionary.TryAdd(i, new AutoResetEvent(false));
-                ThreadPool.QueueUserWorkItem(DemoTask, i);
+                var tt1 = new Thread(DemoTask);
+                _threadQueue.Enqueue(new CookieTask(tt1, _count--));
+                if (_count <= 0)
+                {
+                    _count = 10;
+                }
             }
-
-            _dictionary[0].Set();
         }
 
-        private void DemoTask(object key)
+        private void DemoTask(object seconds)
         {
-            int index = (int)key;
-            String id = DateTime.Now.ToString("MM-dd HH:mm:ss fff");
-            Debug.WriteLine("START @" + id);
-            _dictionary[index].WaitOne();
+            _autoResetEvent.WaitOne();
 
-            int times;
-            if (index % 2 == 0)
-            {
-                times = 10;
-            }
-            else
-            {
-                times = 2;
-            }
-
+            int times = int.Parse(seconds.ToString());
             while (times-- > 0) 
             {
-                Debug.Write(times + " ");
-                Thread.Sleep(100);
+                Debug.Write(int.Parse(seconds.ToString()) + " ");
+                Thread.Sleep(10);
             }
             Debug.WriteLine("");
 
-            Debug.WriteLine("END @" + id);
-            if (_dictionary.ContainsKey(index + 1))
-            {
-                _dictionary[index + 1].Set();
-            }
+            _autoResetEvent.Set();
         }
     }
 ```
 [完整工程](https://github.com/zhongwcool/SerialExecutionDemo)
-
+我们在初始化AutoResetEvent对象时，将初始为true即表示有信号状态，所以第一个提交的DemoTask中的WaitOne能拿到信号。
+AutoResetEvent在第一个调用WaitOne后，自动将信号置为无信号状态导致其他调用WaitOne阻塞。
+所以依次提交的任务依次获得信号，其他则阻塞等待，实现了顺序执行。
 
 ### 参考文章：
 1. [WPF下多线程的使用方法](https://www.cnblogs.com/yangyancheng/archive/2011/04/05/2006227.html)
 2. [C#线程控制ManualResetEvent和AutoResetEvent](https://blog.csdn.net/chtnj/article/details/8114399)
-

@@ -1,5 +1,5 @@
 ﻿using System;
-using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Timers;
@@ -13,8 +13,9 @@ namespace SerialExecutionDemo
     /// </summary>
     public partial class MainWindow
     {
-        private readonly ConcurrentDictionary<int, EventWaitHandle> _dictionary =
-            new ConcurrentDictionary<int, EventWaitHandle>();
+        private readonly AutoResetEvent _autoResetEvent = new AutoResetEvent(true);
+        private readonly Queue<CookieTask> _threadQueue = new Queue<CookieTask>();
+        private int _count = 10;
 
         public MainWindow()
         {
@@ -24,6 +25,23 @@ namespace SerialExecutionDemo
             var timer = new Timer(2000);
             timer.Elapsed += MyElapsedEventHandler; //注册中断事件
             timer.Start(); //启动定时器
+
+            var task = new Thread(SerialService);
+            task.Start();
+        }
+
+        private void SerialService()
+        {
+            while (true)
+            {
+                if (_threadQueue.Count > 0)
+                {
+                    var tt = _threadQueue.Dequeue();
+                    tt.Worker.Start(tt.Data);
+                }
+
+                Thread.Sleep(500);
+            }
         }
 
         private void MyElapsedEventHandler(object sender, ElapsedEventArgs e)
@@ -33,38 +51,28 @@ namespace SerialExecutionDemo
 
         private void Button_OnClick(object sender, RoutedEventArgs e)
         {
-            for (var i = 0; i < 10; i++)
+            for (var i = 0; i < 100; i++)
             {
-                _dictionary.TryAdd(i, new AutoResetEvent(false));
-                ThreadPool.QueueUserWorkItem(DemoTask, i);
+                var tt1 = new Thread(DemoTask);
+                _threadQueue.Enqueue(new CookieTask(tt1, _count--));
+                if (_count <= 0) _count = 10;
             }
-
-            _dictionary[0].Set();
         }
 
-        private void DemoTask(object key)
+        private void DemoTask(object seconds)
         {
-            var index = (int) key;
-            var id = DateTime.Now.ToString("MM-dd HH:mm:ss fff");
-            Debug.WriteLine("START @" + id);
-            _dictionary[index].WaitOne();
+            _autoResetEvent.WaitOne();
 
-            int times;
-            if (index % 2 == 0)
-                times = 10;
-            else
-                times = 2;
-
+            var times = int.Parse(seconds.ToString());
             while (times-- > 0)
             {
-                Debug.Write(times + " ");
-                Thread.Sleep(100);
+                Debug.Write(int.Parse(seconds.ToString()) + " ");
+                Thread.Sleep(10);
             }
 
             Debug.WriteLine("");
 
-            Debug.WriteLine("END @" + id);
-            if (_dictionary.ContainsKey(index + 1)) _dictionary[index + 1].Set();
+            _autoResetEvent.Set();
         }
     }
 }
